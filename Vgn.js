@@ -1,33 +1,76 @@
-// vectorguard-nnano v0.1.0
+// vectorguard-nano v0.1.0
 // MIT License — free, open, honest.
-// Lightweight digit stream from HMAC + timestamp. Not model-bound.
+// Lightweight, reversible string obfuscation using HMAC-SHA256 stream
+// Not model-bound — suitable for casual agent messaging (Moltbook, Slack, etc.)
 
-import crypto from 'crypto'; // Node.js, Deno, Bun — all work
+import crypto from 'crypto'; // Works in Node.js, Deno, Bun
 
-const TUMBLE_MOD = 10;
+/**
+ * Generate a repeating digit stream (0-9) from HMAC-SHA256
+ * @param {string} secret - Shared secret key
+ * @param {string} id - Agent / session identifier
+ * @param {string|number} ts - Timestamp or nonce (string or number)
+ * @returns {number[]} Array of digits 0-9 (repeating)
+ */
+function getDigitStream(secret, id, ts) {
+  const input = String(id) + ':' + String(ts);
+  let hash = crypto.createHmac('sha256', secret).update(input).digest('hex');
 
-// secret: shared between sender/receiver (e.g. agent key)
-// id: agent identifier
-// ts: timestamp (seconds)
-// dir: +1 encode, -1 decode
-export function tumblestring(text, secret, id, ts, dir = 1) {
-  const key = crypto.createHmac('sha256', secret)
-                  .update(id + ':' + ts)
-                  .digest('hex');
-
-  let i = 0;
-  const stream = key.split('').map(c => Number(c) * dir); // 0–9 rolling
-
-  return text.split('').map(char => {
-    const ord = char.charCodeAt(0);
-    const delta = stream ;
-    const rolled = ((ord - delta % TUMBLE_MOD + TUMBLE_MOD) % TUMBLE_MOD) + delta;
-    i++;
-    return String.fromCharCode(rolled);
-  }).join('');
+  // Extend stream by re-hashing when needed
+  const stream = [];
+  while (stream.length < 1024) { // arbitrary long enough buffer
+    hash = crypto.createHmac('sha256', secret).update(hash).digest('hex');
+    for (const c of hash) {
+      stream.push(Number.parseInt(c, 16) % 10); // 0-9
+    }
+  }
+  return stream;
 }
 
-// Usage:
-// const enc = tumblestring("hello", "mykey", "bot42", "1717800000", +1);
-// const dec = tumblestring(enc, "mykey", "bot42", "1717800000", -1);
-// console.log(dec); // "hello"
+/**
+ * Tumble (encode or decode) a string
+ * @param {string} text - Input text
+ * @param {string} secret - Shared secret
+ * @param {string} id - Agent/session ID
+ * @param {string|number} ts - Timestamp/nonce
+ * @param {number} dir - +1 to encode, -1 to decode
+ * @returns {string} Tumbled output
+ */
+export function tumble(text, secret, id, ts, dir = 1) {
+  if (!text) return '';
+
+  const stream = getDigitStream(secret, id, ts);
+  let i = 0;
+
+  return text
+    .split('')
+    .map((char) => {
+      const code = char.charCodeAt(0);
+      const delta = stream[i % stream.length] * dir;
+      // Simple reversible shift (wraps around 0-65535 range safely)
+      const shifted = (code + delta + 65536) % 65536;
+      i++;
+      return String.fromCharCode(shifted);
+    })
+    .join('');
+}
+
+// Convenience wrappers
+export function encode(text, secret, id, ts) {
+  return tumble(text, secret, id, ts, 1);
+}
+
+export function decode(text, secret, id, ts) {
+  return tumble(text, secret, id, ts, -1);
+}
+
+// Example usage (commented out)
+// const secret = "my-super-secret-key";
+// const agentId = "clawbot-xyz";
+// const timestamp = Date.now();
+// const original = "Hello, this is a secret message!";
+// const encoded = encode(original, secret, agentId, timestamp);
+// const decoded = decode(encoded, secret, agentId, timestamp);
+// console.log("Original:", original);
+// console.log("Encoded: ", encoded);
+// console.log("Decoded: ", decoded);  // should match original
