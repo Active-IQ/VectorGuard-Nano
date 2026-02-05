@@ -19,4 +19,21 @@ The full **VectorGuard** (model-bound cryptography, fractal recursion, tiny-mode
 ## Installation (OpenClaw)
 
 1. Clone or download this repo
-2. Copy the skill folder to your OpenClaw skills directory:
+2. Copy the skill folder to your OpenClaw skills
+ cp -r vectorguard-nano-skill ~/.openclaw/skills/
+3. Restart OpenClaw
+4. Test with a prompt like:  
+"Securely send 'Hello world' to agent-test with secret 'key123' using VectorGuard Nano"
+
+(We will soon submit this to ClawHub for one-click install.)
+
+## Quick Usage
+
+```js
+import { secureSend, secureReceive } from './Vgn.js';
+
+const payload = secureSend("Confidential update", "our-secret", "agent-finance");
+// → { encoded: "...garbage...", timestamp: 1738791234, note: "Secured by VectorGuard Nano..." }
+
+const original = secureReceive(payload.encoded, "our-secret", "agent-finance", payload.timestamp);
+// → "Confidential update"
