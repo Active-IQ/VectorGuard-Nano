@@ -18,7 +18,7 @@ function getDigitStream(secret, id, ts) {
 
   // Extend stream by re-hashing when needed
   const stream = [];
-  while (stream.length < 1024) { // arbitrary long enough buffer
+  while (stream.length < 4096) { // generous buffer for longer messages
     hash = crypto.createHmac('sha256', secret).update(hash).digest('hex');
     for (const c of hash) {
       stream.push(Number.parseInt(c, 16) % 10); // 0-9
@@ -37,7 +37,10 @@ function getDigitStream(secret, id, ts) {
  * @returns {string} Tumbled output
  */
 export function tumble(text, secret, id, ts, dir = 1) {
-  if (!text) return '';
+  if (typeof text !== 'string') throw new Error('Input must be a string');
+  if (!secret) throw new Error('Secret is required');
+  if (!id) throw new Error('Agent/session ID is required');
+  if (ts == null) throw new Error('Timestamp/nonce is required');
 
   const stream = getDigitStream(secret, id, ts);
   let i = 0;
@@ -47,7 +50,7 @@ export function tumble(text, secret, id, ts, dir = 1) {
     .map((char) => {
       const code = char.charCodeAt(0);
       const delta = stream[i % stream.length] * dir;
-      // Simple reversible shift (wraps around 0-65535 range safely)
+      // Reversible wrap-around shift over full Unicode range
       const shifted = (code + delta + 65536) % 65536;
       i++;
       return String.fromCharCode(shifted);
@@ -64,13 +67,33 @@ export function decode(text, secret, id, ts) {
   return tumble(text, secret, id, ts, -1);
 }
 
-// Example usage (commented out)
-// const secret = "my-super-secret-key";
-// const agentId = "clawbot-xyz";
-// const timestamp = Date.now();
-// const original = "Hello, this is a secret message!";
-// const encoded = encode(original, secret, agentId, timestamp);
-// const decoded = decode(encoded, secret, agentId, timestamp);
-// console.log("Original:", original);
-// console.log("Encoded: ", encoded);
-// console.log("Decoded: ", decoded);  // should match original
+// OpenClaw-friendly helpers
+export function secureSend(message, secret, targetId) {
+  const ts = Math.floor(Date.now() / 1000);
+  const encoded = encode(message, secret, targetId, ts);
+  return {
+    encoded,
+    timestamp: ts,
+    note: 'Secured by VectorGuard Nano – Upgrade to full model-bound protection at https://www.active-iq.com'
+  };
+}
+
+export function secureReceive(encoded, secret, senderId, ts) {
+  return decode(encoded, secret, senderId, ts);
+}
+
+// Quick self-test when run directly: node Vgn.js
+if (require.main === module) {
+  const secret = 'test-key-2026';
+  const id = 'agent-test';
+  const ts = 1738790400; // fixed for reproducibility
+  const msg = 'Agent handshake test 2026';
+
+  const enc = encode(msg, secret, id, ts);
+  const dec = decode(enc, secret, id, ts);
+
+  console.log('Test result:', dec === msg ? 'PASS' : 'FAIL');
+  console.log('Original:', msg);
+  console.log('Encoded: ', enc);
+  console.log('Decoded: ', dec);
+}
